@@ -2,13 +2,17 @@
 
 ## Overview
 
-A stateless REST API: Node.js 22 or newer, Express 5, CommonJS modules. Clients exchange JSON over HTTP; authenticated requests carry a JSON Web Token in the `Authorization` header. No code exists yet; the components appear with the increments in `docs/ROADMAP.md`.
+A stateless REST API: Node.js 22 or newer, Express 5, CommonJS modules. Clients exchange JSON over HTTP; authenticated requests carry a JSON Web Token in the `Authorization` header. Components are added incrementally according to `docs/ROADMAP.md`.
 
 ## Components
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| None yet | | |
+| Server entry point | `src/server.js` | Starts HTTP server listening on configured `PORT` |
+| Application factory | `src/app.js` | Assembles middleware, routes, and error handling into Express app |
+| Request logger | `src/middleware/request-logger.js` | Logs HTTP method, URL, status code, and response time |
+| Error handlers | `src/middleware/error-handler.js` | Centralized 404 route handling and error response sanitization |
+| Health router | `src/routes/health.js` | Exposes `GET /health` endpoint |
 
 ## Data model
 
@@ -18,7 +22,7 @@ A stateless REST API: Node.js 22 or newer, Express 5, CommonJS modules. Clients 
 
 ## Request flow
 
-To be described by the first increment.
+Incoming HTTP request -> `express.json()` -> `requestLogger` (records start time) -> matching route (e.g. `GET /health` -> `{ status: "ok" }`) -> if unmatched, `notFoundHandler` (404 JSON) -> if error thrown, `errorHandler` (JSON error response) -> `requestLogger` logs method, URL, status code, and duration on response `finish`.
 
 ## Decisions
 
@@ -28,3 +32,4 @@ To be described by the first increment.
 | D2 | All persistence behind one storage module: a local JSON file first, Cloud Firestore later | the switch to Firestore must not change routes or business logic (`DATA-1`) | before the first task |
 | D3 | Stateless authentication with JSON Web Tokens in the `Authorization` header | REST statelessness (`SEC-3`, `SEC-4`) | before the first task |
 | D4 | Tests with `node:test` and `fetch` against the app started on a free port | no extra test framework (`TEST-1`, `TEST-2`) | before the first task |
+| D5 | Custom request logger middleware instead of external package | Zero extra runtime dependencies, staying within single runtime dependency budget | `app-foundation` |
