@@ -7,7 +7,7 @@ let server;
 let baseUrl;
 
 before(async () => {
-  server = createApp({ logger: () => {} }).listen(0);
+  server = createApp({ logger: () => {}, jwtSecret: "test-jwt-secret" }).listen(0);
   await once(server, "listening");
   baseUrl = `http://localhost:${server.address().port}`;
 });

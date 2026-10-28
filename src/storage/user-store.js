@@ -65,7 +65,18 @@ async function createUser({ email, passwordHash }, options = {}) {
   });
 }
 
+async function findUserByEmail(email, options = {}) {
+  const filePath = resolveFilePath(options);
+  return serialize(async () => {
+    const users = await readUsers(filePath);
+    const normalized = String(email).trim().toLowerCase();
+    const user = users.find((u) => u.email.toLowerCase() === normalized);
+    return user ? { ...user } : null;
+  });
+}
+
 module.exports = {
   createUser,
+  findUserByEmail,
   readUsers,
 };

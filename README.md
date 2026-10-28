@@ -8,6 +8,7 @@ A REST API for personal tasks (to-dos): users register, sign in with a JSON Web 
 | --- | --- | --- |
 | Health check | `GET /health` | `app-foundation` |
 | User registration | `POST /auth/register` | `user-registration` |
+| User login | `POST /auth/login` | `user-login` |
 
 ## Requirements
 
@@ -27,14 +28,15 @@ npm ci
 | --- | --- | --- |
 | `PORT` | HTTP port the server listens on | `3000` |
 | `DATA_FILE` | Path to local JSON file for persistence | `data/users.json` |
+| `JWT_SECRET` | Secret key used to sign and verify JSON Web Tokens | required (no default) |
 
 ## Run
 
 ```bash
-npm start
+JWT_SECRET=dev-secret-key npm start
 ```
 
-In development, with `.env` loaded and automatic restart on change:
+In development, with `.env` loaded (`JWT_SECRET=...`) and automatic restart on change:
 
 ```bash
 npm run dev
@@ -55,6 +57,12 @@ curl -i http://localhost:3000/unknown
 curl -i -X POST http://localhost:3000/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"Password123!"}'
+curl -i -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"Password123!"}'
+curl -i -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"WrongPassword!"}'
 ```
 
 Alternatively, import and run `postman/task-api.postman_collection.json` in Postman.
