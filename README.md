@@ -57,6 +57,8 @@ curl -i -X POST http://localhost:3000/auth/register \
   -d '{"email":"user@example.com","password":"Password123!"}'
 ```
 
+Alternatively, import and run `postman/task-api.postman_collection.json` in Postman.
+
 ## Development workflow
 
 Every change is a task that goes through eight phases, each one a skill in `.agents/skills/`; the rules are in `AGENTS.md`. A task starts with `/task-scoping`, which takes the next roadmap item when it gets no request. The later phases (`/task-planning`, `/task-plan-critique`, `/task-development`, `/task-code-review`, `/task-testing`, `/task-gitops`, `/task-doc-updates`) find the task from the current branch. The files of a task are in `work/<slug>/` while it is open and in `work/done/<slug>/` after it is finished.
