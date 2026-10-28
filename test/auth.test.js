@@ -1,0 +1,190 @@
+const { test, before, after } = require("node:test");
+const assert = require("node:assert/strict");
+const { once } = require("node:events");
+const os = require("node:os");
+const path = require("node:path");
+const fs = require("node:fs/promises");
+const bcrypt = require("bcryptjs");
+const { createApp } = require("../src/app");
+const { readUsers } = require("../src/storage/user-store");
+
+let server;
+let baseUrl;
+let tempDir;
+let dataFile;
+
+before(async () => {
+  tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "task-api-auth-test-"));
+  dataFile = path.join(tempDir, "users.json");
+
+  server = createApp({
+    logger: () => {},
+    dataFile,
+  }).listen(0);
+
+  await once(server, "listening");
+  baseUrl = `http://localhost:${server.address().port}`;
+});
+
+after(async () => {
+  if (server) {
+    server.close();
+  }
+  if (tempDir) {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("POST /auth/register with valid input returns 201, Location header, and user without secrets", async () => {
+  const payload = {
+    email: "user1@example.com",
+    password: "Password123!",
+  };
+
+  const res = await fetch(`${baseUrl}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  assert.equal(res.status, 201);
+  const body = await res.json();
+
+  assert.ok(typeof body.id === "string" && body.id.length > 0);
+  assert.equal(body.email, "user1@example.com");
+  assert.ok(typeof body.createdAt === "string");
+  assert.equal(body.password, undefined);
+  assert.equal(body.passwordHash, undefined);
+  assert.equal(res.headers.get("Location"), `/users/${body.id}`);
+});
+
+test("POST /auth/register with missing, blank, or invalid email format returns 400", async () => {
+  const cases = [
+    { payload: { password: "Password123!" }, expected: "email is required" },
+    { payload: { email: "", password: "Password123!" }, expected: "email is required" },
+    { payload: { email: "   ", password: "Password123!" }, expected: "email is required" },
+    { payload: { email: "invalid-email", password: "Password123!" }, expected: "invalid email format" },
+    { payload: { email: "user@domain", password: "Password123!" }, expected: "invalid email format" },
+  ];
+
+  for (const { payload, expected } of cases) {
+    const res = await fetch(`${baseUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.deepEqual(body, { error: expected });
+  }
+});
+
+test("POST /auth/register with password shorter than 8 characters returns 400", async () => {
+  const cases = [
+    { payload: { email: "short@example.com" }, expected: "password is required" },
+    { payload: { email: "short@example.com", password: "" }, expected: "password is required" },
+    { payload: { email: "short@example.com", password: "1234567" }, expected: "password must be at least 8 characters long" },
+  ];
+
+  for (const { payload, expected } of cases) {
+    const res = await fetch(`${baseUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.deepEqual(body, { error: expected });
+  }
+});
+
+test("POST /auth/register with password longer than 72 bytes returns 400", async () => {
+  const longAsciiPassword = "a".repeat(73);
+  const resAscii = await fetch(`${baseUrl}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "toolong1@example.com", password: longAsciiPassword }),
+  });
+
+  assert.equal(resAscii.status, 400);
+  const bodyAscii = await resAscii.json();
+  assert.deepEqual(bodyAscii, { error: "password must not exceed 72 bytes" });
+
+  // 37 2-byte characters = 74 bytes (string length is 37, but byte length is 74)
+  const longUtf8Password = "é".repeat(37);
+  const resUtf8 = await fetch(`${baseUrl}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "toolong2@example.com", password: longUtf8Password }),
+  });
+
+  assert.equal(resUtf8.status, 400);
+  const bodyUtf8 = await resUtf8.json();
+  assert.deepEqual(bodyUtf8, { error: "password must not exceed 72 bytes" });
+});
+
+test("POST /auth/register with duplicate email returns 409 Conflict", async () => {
+  const res = await fetch(`${baseUrl}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "user1@example.com", password: "AnotherPassword123!" }),
+  });
+
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.deepEqual(body, { error: "Email already registered" });
+});
+
+test("POST /auth/register duplicate email check is case-insensitive", async () => {
+  const res = await fetch(`${baseUrl}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "USER1@EXAMPLE.COM", password: "AnotherPassword123!" }),
+  });
+
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.deepEqual(body, { error: "Email already registered" });
+});
+
+test("User record stored in file has bcrypt hash cost 10 and no plain text password", async () => {
+  const users = await readUsers(dataFile);
+  const user = users.find((u) => u.email === "user1@example.com");
+
+  assert.ok(user);
+  assert.equal(user.email, "user1@example.com");
+  assert.equal(user.password, undefined);
+  assert.ok(typeof user.passwordHash === "string");
+  // bcrypt hashes with cost factor 10 start with $2a$10$ or $2b$10$
+  assert.match(user.passwordHash, /^\$2[ab]\$10\$/);
+
+  const passwordMatches = await bcrypt.compare("Password123!", user.passwordHash);
+  assert.equal(passwordMatches, true);
+});
+
+test("Concurrent registration requests for same email serialize safely (one 201, one 409)", async () => {
+  const email = "concurrent@example.com";
+  const password = "Password123!";
+
+  const [res1, res2] = await Promise.all([
+    fetch(`${baseUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+    fetch(`${baseUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  ]);
+
+  const statuses = [res1.status, res2.status].sort();
+  assert.deepEqual(statuses, [201, 409]);
+
+  const users = await readUsers(dataFile);
+  const matching = users.filter((u) => u.email === email);
+  assert.equal(matching.length, 1);
+});
