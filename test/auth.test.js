@@ -375,14 +375,18 @@ test("auth-service registerUser stores a bcrypt hash and returns the user withou
   assert.ok(await bcrypt.compare("Password123!", stored.passwordHash));
 });
 
-test("auth-service registerUser with an e-mail already registered throws DUPLICATE_EMAIL with status 409", async () => {
+test("auth-service registerUser with an e-mail already registered throws DUPLICATE_EMAIL without status", async () => {
   await registerUser({ email: "service2@example.com", password: "Password123!" }, { dataFile });
 
-  await assert.rejects(registerUser({ email: "SERVICE2@example.com", password: "Password123!" }, { dataFile }), {
-    code: "DUPLICATE_EMAIL",
-    status: 409,
-    message: "Email already registered",
-  });
+  await assert.rejects(
+    registerUser({ email: "SERVICE2@example.com", password: "Password123!" }, { dataFile }),
+    (err) => {
+      assert.equal(err.code, "DUPLICATE_EMAIL");
+      assert.equal(err.message, "Email already registered");
+      assert.equal(err.status, undefined);
+      return true;
+    },
+  );
 });
 
 test("auth-service loginUser with valid credentials returns an HS256 JWT with sub and email", async () => {
@@ -399,13 +403,18 @@ test("auth-service loginUser with valid credentials returns an HS256 JWT with su
   assert.equal(payload.exp - payload.iat, 3600);
 });
 
-test("auth-service loginUser with a wrong password or unknown e-mail throws INVALID_CREDENTIALS with status 401", async () => {
+test("auth-service loginUser with a wrong password or unknown e-mail throws INVALID_CREDENTIALS without status", async () => {
   await registerUser({ email: "service4@example.com", password: "Password123!" }, { dataFile });
   const options = { dataFile, jwtSecret: TEST_JWT_SECRET };
-  const expected = { code: "INVALID_CREDENTIALS", status: 401, message: "Invalid email or password" };
+  const checkError = (err) => {
+    assert.equal(err.code, "INVALID_CREDENTIALS");
+    assert.equal(err.message, "Invalid email or password");
+    assert.equal(err.status, undefined);
+    return true;
+  };
 
-  await assert.rejects(loginUser({ email: "service4@example.com", password: "WrongPassword!" }, options), expected);
-  await assert.rejects(loginUser({ email: "nobody@example.com", password: "Password123!" }, options), expected);
+  await assert.rejects(loginUser({ email: "service4@example.com", password: "WrongPassword!" }, options), checkError);
+  await assert.rejects(loginUser({ email: "nobody@example.com", password: "Password123!" }, options), checkError);
 });
 
 test("auth-controller validators return null for valid input and an error message for invalid input", () => {
