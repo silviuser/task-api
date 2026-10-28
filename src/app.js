@@ -5,13 +5,18 @@ const healthRouter = require("./routes/health");
 const { createAuthRouter } = require("./routes/auth");
 
 function createApp(options = {}) {
+  const jwtSecret = options.jwtSecret ?? process.env.JWT_SECRET;
+  if (typeof jwtSecret !== "string" || jwtSecret.trim() === "") {
+    throw new Error("JWT_SECRET is required");
+  }
+
   const app = express();
 
   app.use(createRequestLogger(options.logger));
   app.use(express.json());
 
   app.use("/health", healthRouter);
-  app.use("/auth", createAuthRouter(options));
+  app.use("/auth", createAuthRouter({ ...options, jwtSecret }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

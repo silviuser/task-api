@@ -10,7 +10,7 @@ let baseUrl;
 const logs = [];
 
 before(async () => {
-  server = createApp({ logger: (msg) => logs.push(msg) }).listen(0);
+  server = createApp({ logger: (msg) => logs.push(msg), jwtSecret: "test-jwt-secret" }).listen(0);
   await once(server, "listening");
   baseUrl = `http://localhost:${server.address().port}`;
 });

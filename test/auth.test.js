@@ -20,6 +20,7 @@ before(async () => {
   server = createApp({
     logger: () => {},
     dataFile,
+    jwtSecret: "test-jwt-secret",
   }).listen(0);
 
   await once(server, "listening");
