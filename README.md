@@ -7,6 +7,7 @@ A REST API for personal tasks (to-dos): users register, sign in with a JSON Web 
 | Feature | Interface | Since |
 | --- | --- | --- |
 | Health check | `GET /health` | `app-foundation` |
+| User registration | `POST /auth/register` | `user-registration` |
 
 ## Requirements
 
@@ -25,6 +26,7 @@ npm ci
 | Setting | Meaning | Default |
 | --- | --- | --- |
 | `PORT` | HTTP port the server listens on | `3000` |
+| `DATA_FILE` | Path to local JSON file for persistence | `data/users.json` |
 
 ## Run
 
@@ -50,6 +52,9 @@ Manual checks:
 ```bash
 curl -i http://localhost:3000/health
 curl -i http://localhost:3000/unknown
+curl -i -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"Password123!"}'
 ```
 
 ## Development workflow
