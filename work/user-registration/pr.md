@@ -4,7 +4,7 @@ artifact: pr
 branch: user-registration
 base: main
 updated_commit: none
-pr: not created
+pr: https://github.com/silviuser/task-api/pull/2
 ---
 
 # feat(auth): add user registration endpoint and atomic json file storage
