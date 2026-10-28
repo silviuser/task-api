@@ -4,7 +4,7 @@ artifact: pr
 branch: user-login
 base: main
 updated_commit: none
-pr: not created
+pr: https://github.com/silviuser/task-api/pull/3
 ---
 
 # feat(auth): add user login endpoint with JWT authentication
