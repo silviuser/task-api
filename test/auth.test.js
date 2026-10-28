@@ -5,8 +5,11 @@ const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const { createApp } = require("../src/app");
-const { readUsers } = require("../src/storage/user-store");
+const { readUsers, findUserByEmail } = require("../src/storage/user-store");
+
+const TEST_JWT_SECRET = "test-jwt-secret";
 
 let server;
 let baseUrl;
@@ -20,7 +23,7 @@ before(async () => {
   server = createApp({
     logger: () => {},
     dataFile,
-    jwtSecret: "test-jwt-secret",
+    jwtSecret: TEST_JWT_SECRET,
   }).listen(0);
 
   await once(server, "listening");
@@ -188,4 +191,146 @@ test("Concurrent registration requests for same email serialize safely (one 201,
   const users = await readUsers(dataFile);
   const matching = users.filter((u) => u.email === email);
   assert.equal(matching.length, 1);
+});
+
+test("POST /auth/login with valid credentials (and uppercase email) returns 200 and a valid HS256 JWT with sub, email, and 1h expiry", async () => {
+  const users = await readUsers(dataFile);
+  const expectedUser = users.find((u) => u.email === "user1@example.com");
+  assert.ok(expectedUser);
+
+  for (const loginEmail of ["user1@example.com", "  USER1@EXAMPLE.COM  "]) {
+    const res = await fetch(`${baseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: loginEmail, password: "Password123!" }),
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(Object.keys(body), ["token"]);
+    assert.ok(typeof body.token === "string" && body.token.length > 0);
+
+    const decoded = jwt.verify(body.token, TEST_JWT_SECRET, {
+      algorithms: ["HS256"],
+      complete: true,
+    });
+
+    assert.equal(decoded.header.alg, "HS256");
+    assert.equal(decoded.payload.sub, expectedUser.id);
+    assert.equal(decoded.payload.email, "user1@example.com");
+    assert.equal(typeof decoded.payload.iat, "number");
+    assert.equal(typeof decoded.payload.exp, "number");
+    assert.equal(decoded.payload.exp - decoded.payload.iat, 3600);
+    assert.equal(decoded.payload.password, undefined);
+    assert.equal(decoded.payload.passwordHash, undefined);
+  }
+});
+
+test("POST /auth/login with missing, blank, or invalid email format returns 400", async () => {
+  const cases = [
+    { payload: { password: "Password123!" }, expected: "email is required" },
+    { payload: { email: "", password: "Password123!" }, expected: "email is required" },
+    { payload: { email: "   ", password: "Password123!" }, expected: "email is required" },
+    { payload: { email: 123, password: "Password123!" }, expected: "email is required" },
+    { payload: { email: "invalid-email", password: "Password123!" }, expected: "invalid email format" },
+    { payload: { email: "user@domain", password: "Password123!" }, expected: "invalid email format" },
+  ];
+
+  for (const { payload, expected } of cases) {
+    const res = await fetch(`${baseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.deepEqual(body, { error: expected });
+  }
+});
+
+test("POST /auth/login with missing, empty, non-string, or >72-byte password returns 400", async () => {
+  const cases = [
+    { payload: { email: "user1@example.com" }, expected: "password is required" },
+    { payload: { email: "user1@example.com", password: "" }, expected: "password is required" },
+    { payload: { email: "user1@example.com", password: 12345 }, expected: "password is required" },
+    { payload: { email: "user1@example.com", password: "a".repeat(73) }, expected: "password must not exceed 72 bytes" },
+    { payload: { email: "user1@example.com", password: "é".repeat(37) }, expected: "password must not exceed 72 bytes" },
+  ];
+
+  for (const { payload, expected } of cases) {
+    const res = await fetch(`${baseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.deepEqual(body, { error: expected });
+  }
+});
+
+test("POST /auth/login with wrong password returns 401 Invalid email or password", async () => {
+  const res = await fetch(`${baseUrl}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "user1@example.com", password: "WrongPassword!" }),
+  });
+
+  assert.equal(res.status, 401);
+  const body = await res.json();
+  assert.deepEqual(body, { error: "Invalid email or password" });
+});
+
+test("POST /auth/login with unregistered email returns 401 with identical error message", async () => {
+  const res = await fetch(`${baseUrl}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "unknown@example.com", password: "Password123!" }),
+  });
+
+  assert.equal(res.status, 401);
+  const body = await res.json();
+  assert.deepEqual(body, { error: "Invalid email or password" });
+});
+
+test("findUserByEmail returns matching user (with passwordHash) case-insensitively and null when unknown", async () => {
+  const found = await findUserByEmail("  USER1@Example.com ", { dataFile });
+  assert.ok(found);
+  assert.equal(found.email, "user1@example.com");
+  assert.ok(typeof found.id === "string" && found.id.length > 0);
+  assert.ok(typeof found.passwordHash === "string" && found.passwordHash.startsWith("$2"));
+  assert.ok(typeof found.createdAt === "string");
+
+  // Mutating returned object does not mutate underlying data
+  found.email = "mutated@example.com";
+  const foundAgain = await findUserByEmail("user1@example.com", { dataFile });
+  assert.equal(foundAgain.email, "user1@example.com");
+
+  const missing = await findUserByEmail("nobody@example.com", { dataFile });
+  assert.equal(missing, null);
+});
+
+test("createApp throws when JWT_SECRET is missing or blank", () => {
+  const originalJwtSecret = process.env.JWT_SECRET;
+  delete process.env.JWT_SECRET;
+
+  try {
+    assert.throws(() => createApp({ logger: () => {} }), {
+      message: "JWT_SECRET is required",
+    });
+    assert.throws(() => createApp({ logger: () => {}, jwtSecret: "" }), {
+      message: "JWT_SECRET is required",
+    });
+    assert.throws(() => createApp({ logger: () => {}, jwtSecret: "   " }), {
+      message: "JWT_SECRET is required",
+    });
+  } finally {
+    if (originalJwtSecret !== undefined) {
+      process.env.JWT_SECRET = originalJwtSecret;
+    } else {
+      delete process.env.JWT_SECRET;
+    }
+  }
 });
