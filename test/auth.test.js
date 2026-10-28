@@ -8,6 +8,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { createApp } = require("../src/app");
 const { readUsers, findUserByEmail } = require("../src/storage/user-store");
+const { registerUser, loginUser } = require("../src/services/auth-service");
+const {
+  createAuthController,
+  validateRegisterInput,
+  validateLoginInput,
+} = require("../src/controllers/auth-controller");
+const { getHealth } = require("../src/controllers/health-controller");
 
 const TEST_JWT_SECRET = "test-jwt-secret";
 
@@ -333,4 +340,123 @@ test("createApp throws when JWT_SECRET is missing or blank", () => {
       delete process.env.JWT_SECRET;
     }
   }
+});
+
+function createFakeResponse() {
+  return {
+    statusCode: 200,
+    headers: {},
+    body: undefined,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    location(url) {
+      this.headers.location = url;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+}
+
+test("auth-service registerUser stores a bcrypt hash and returns the user without secrets", async () => {
+  const user = await registerUser({ email: " service1@example.com ", password: "Password123!" }, { dataFile });
+
+  assert.ok(typeof user.id === "string" && user.id.length > 0);
+  assert.equal(user.email, "service1@example.com");
+  assert.ok(typeof user.createdAt === "string");
+  assert.equal(user.passwordHash, undefined);
+
+  const stored = await findUserByEmail("service1@example.com", { dataFile });
+  assert.equal(bcrypt.getRounds(stored.passwordHash), 10);
+  assert.ok(await bcrypt.compare("Password123!", stored.passwordHash));
+});
+
+test("auth-service registerUser with an e-mail already registered throws DUPLICATE_EMAIL with status 409", async () => {
+  await registerUser({ email: "service2@example.com", password: "Password123!" }, { dataFile });
+
+  await assert.rejects(registerUser({ email: "SERVICE2@example.com", password: "Password123!" }, { dataFile }), {
+    code: "DUPLICATE_EMAIL",
+    status: 409,
+    message: "Email already registered",
+  });
+});
+
+test("auth-service loginUser with valid credentials returns an HS256 JWT with sub and email", async () => {
+  const user = await registerUser({ email: "service3@example.com", password: "Password123!" }, { dataFile });
+
+  const { token } = await loginUser(
+    { email: "service3@example.com", password: "Password123!" },
+    { dataFile, jwtSecret: TEST_JWT_SECRET },
+  );
+
+  const payload = jwt.verify(token, TEST_JWT_SECRET, { algorithms: ["HS256"] });
+  assert.equal(payload.sub, user.id);
+  assert.equal(payload.email, "service3@example.com");
+  assert.equal(payload.exp - payload.iat, 3600);
+});
+
+test("auth-service loginUser with a wrong password or unknown e-mail throws INVALID_CREDENTIALS with status 401", async () => {
+  await registerUser({ email: "service4@example.com", password: "Password123!" }, { dataFile });
+  const options = { dataFile, jwtSecret: TEST_JWT_SECRET };
+  const expected = { code: "INVALID_CREDENTIALS", status: 401, message: "Invalid email or password" };
+
+  await assert.rejects(loginUser({ email: "service4@example.com", password: "WrongPassword!" }, options), expected);
+  await assert.rejects(loginUser({ email: "nobody@example.com", password: "Password123!" }, options), expected);
+});
+
+test("auth-controller validators return null for valid input and an error message for invalid input", () => {
+  assert.equal(validateRegisterInput({ email: "a@example.com", password: "Password123!" }), null);
+  assert.equal(validateRegisterInput({ email: "a@example.com", password: "short" }), "password must be at least 8 characters long");
+  assert.equal(validateLoginInput({ email: "a@example.com", password: "x" }), null);
+  assert.equal(validateLoginInput(undefined), "email is required");
+});
+
+test("auth-controller register returns 400 for invalid input and 201 with Location for a new user", async () => {
+  const { register } = createAuthController({ dataFile });
+
+  const invalidRes = createFakeResponse();
+  await register({ body: { email: "invalid-email", password: "Password123!" } }, invalidRes, assert.fail);
+  assert.equal(invalidRes.statusCode, 400);
+  assert.deepEqual(invalidRes.body, { error: "invalid email format" });
+
+  const res = createFakeResponse();
+  await register({ body: { email: "controller1@example.com", password: "Password123!" } }, res, assert.fail);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.headers.location, `/users/${res.body.id}`);
+  assert.equal(res.body.email, "controller1@example.com");
+  assert.equal(res.body.passwordHash, undefined);
+});
+
+test("auth-controller login returns 401 for invalid credentials and forwards unexpected errors to next", async () => {
+  await registerUser({ email: "controller2@example.com", password: "Password123!" }, { dataFile });
+
+  const { login } = createAuthController({ dataFile, jwtSecret: TEST_JWT_SECRET });
+  const res = createFakeResponse();
+  await login({ body: { email: "controller2@example.com", password: "WrongPassword!" } }, res, assert.fail);
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: "Invalid email or password" });
+
+  // Without a JWT secret, signing fails with an unexpected error that must reach the error handler.
+  const { login: loginWithoutSecret } = createAuthController({ dataFile });
+  let forwarded;
+  await loginWithoutSecret(
+    { body: { email: "controller2@example.com", password: "Password123!" } },
+    createFakeResponse(),
+    (err) => {
+      forwarded = err;
+    },
+  );
+  assert.ok(forwarded instanceof Error);
+  assert.equal(forwarded.code, undefined);
+});
+
+test("health-controller getHealth responds with status ok", () => {
+  const res = createFakeResponse();
+  getHealth({}, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { status: "ok" });
 });
