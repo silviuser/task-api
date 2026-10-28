@@ -12,8 +12,11 @@ A stateless REST API: Node.js 22 or newer, Express 5, CommonJS modules. Clients 
 | Application factory | `src/app.js` | Enforces required `JWT_SECRET` configuration and assembles middleware, routes, and error handling into Express app |
 | Request logger | `src/middleware/request-logger.js` | Logs HTTP method, URL, status code, and response time |
 | Error handlers | `src/middleware/error-handler.js` | Centralized 404 route handling and error response sanitization |
-| Health router | `src/routes/health.js` | Exposes `GET /health` endpoint |
-| Auth router | `src/routes/auth.js` | User registration and login input validation, `POST /auth/register`, and `POST /auth/login` with timing-protected bcrypt verification and JWT signing |
+| Health router | `src/routes/health.js` | Binds `GET /health` to the health controller |
+| Health controller | `src/controllers/health-controller.js` | `getHealth` responds 200 `{ status: "ok" }` |
+| Auth router | `src/routes/auth.js` | `createAuthRouter(options)` binds `POST /auth/register` and `POST /auth/login` to the auth controller |
+| Auth controller | `src/controllers/auth-controller.js` | Validates register and login input (400), calls the auth service, formats 201 with `Location` or 200 `{ token }`, maps `DUPLICATE_EMAIL` to 409 and `INVALID_CREDENTIALS` to 401, forwards other errors to `next` |
+| Auth service | `src/services/auth-service.js` | `registerUser` (bcrypt hashing, user creation) and `loginUser` (timing-protected bcrypt verification, JWT signing); no Express dependency |
 | User storage | `src/storage/user-store.js` | Promise-serialized local JSON persistence with atomic file writes, duplicate email check, and case-insensitive email lookup |
 
 ## Data model
@@ -24,7 +27,7 @@ A stateless REST API: Node.js 22 or newer, Express 5, CommonJS modules. Clients 
 
 ## Request flow
 
-Incoming HTTP request -> `express.json()` -> `requestLogger` (records start time) -> matching route (e.g. `GET /health` -> `{ status: "ok" }`) -> if unmatched, `notFoundHandler` (404 JSON) -> if error thrown, `errorHandler` (JSON error response) -> `requestLogger` logs method, URL, status code, and duration on response `finish`.
+Incoming HTTP request -> `express.json()` -> `requestLogger` (records start time) -> matching route -> controller (validates input, formats the response) -> service (business logic) -> storage module (e.g. `POST /auth/login` -> `auth-controller` -> `auth-service` -> `user-store`) -> if unmatched, `notFoundHandler` (404 JSON) -> if error thrown, `errorHandler` (JSON error response) -> `requestLogger` logs method, URL, status code, and duration on response `finish`.
 
 ## Decisions
 
@@ -39,3 +42,6 @@ Incoming HTTP request -> `express.json()` -> `requestLogger` (records start time
 | D7 | Promise-serialized atomic writes with `.tmp` file rename for JSON storage | Prevents file corruption and race conditions without third-party database dependencies (`DATA-3`, `DATA-5`) | `user-registration` |
 | D8 | `jsonwebtoken` (`HS256`, `1h` expiry) for token signing and verification | Synchronous signing, algorithm pinning, and standard JWT claims (`sub`, `email`) within the single runtime dependency budget (`SEC-3`) | `user-login` |
 | D9 | Constant-time bcrypt comparison against a precomputed cost-10 dummy hash when login email is not found | Prevents user enumeration via response timing differences and returns a uniform 401 message (`SEC-2`) | `user-login` |
+| D10 | Layers `src/routes/` (bind paths), `src/controllers/` (HTTP input and responses), `src/services/` (business logic), built from plain and factory functions | Separates transport from business logic and matches the existing `createApp` factory style, without `this`-binding boilerplate (`JS-4`, `JS-8`) | `controllers-services` |
+| D11 | Request body validation in the controller; services take plain values and never see `req` or `res` | Keeps services reusable and independent of Express request shapes | `controllers-services` |
+| D12 | No service for static endpoints such as `GET /health` | Avoids a pass-through layer | `controllers-services` |
