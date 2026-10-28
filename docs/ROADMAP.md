@@ -5,7 +5,7 @@ Each item is one increment, developed as a task (see `AGENTS.md`). Status: plann
 | # | Slug | Increment | Status | Pull request |
 | --- | --- | --- | --- | --- | --- |
 | 1 | app-foundation | Express app and server, configuration from environment variables, request logging, health check, JSON responses for unknown routes and errors, lint and test setup | done | https://github.com/silviuser/task-api/pull/1 |
-| 2 | user-registration | `POST /auth/register`: e-mail and password, password hashing, unique e-mail; users in a local JSON file; manual testing with Postman or a similar client | planned | |
+| 2 | user-registration | `POST /auth/register`: e-mail and password, password hashing, unique e-mail; users in a local JSON file; manual testing with Postman or a similar client | done | https://github.com/silviuser/task-api/pull/2 |
 | 3 | user-login | `POST /auth/login` with input validation; issues a JSON Web Token | planned | |
 | 4 | controllers-services | Restructure the code into routes, controllers and services, with no change in behavior | planned | |
 | 5 | task-crud | CRUD on `/tasks`, without authentication | planned | |
