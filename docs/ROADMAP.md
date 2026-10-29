@@ -10,7 +10,7 @@ Each item is one increment, developed as a task (see `AGENTS.md`). Status: plann
 | 4 | controllers-services | Restructure the code into routes, controllers and services, with no change in behavior | done | https://github.com/silviuser/task-api/pull/4 |
 | 5 | task-crud | CRUD on `/tasks`, without authentication | done | https://github.com/silviuser/task-api/pull/5 |
 | 6 | dummy-data | Seed script with realistic fake users and tasks (Faker or similar), for testing with more content | planned | |
-| 7 | task-authorization | `/tasks` only for authenticated users; each user manages only their own tasks; stricter validation | planned | |
+| 7 | task-authorization | `/tasks` only for authenticated users; each user manages only their own tasks; stricter validation | done | https://github.com/silviuser/task-api/pull/7 |
 | 8 | firestore-storage | Cloud Firestore behind the storage module; tests on the Firestore emulator | planned | |
 
 ## Follow-ups

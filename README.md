@@ -10,6 +10,7 @@ A REST API for personal tasks (to-dos): users register, sign in with a JSON Web 
 | User registration | `POST /auth/register` | `user-registration` |
 | User login | `POST /auth/login` | `user-login` |
 | Task CRUD | `POST /tasks`, `GET /tasks`, `GET /tasks/:id`, `PATCH /tasks/:id`, `DELETE /tasks/:id` | `task-crud` |
+| Task authorization | Bearer JWT authentication, per-user task ownership (`userId`), and strict allow-list/UUIDv4 validation on `/tasks` | `task-authorization` |
 
 ## Requirements
 
@@ -66,14 +67,19 @@ curl -i -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"WrongPassword!"}'
 curl -i -X POST http://localhost:3000/tasks \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"title":"Write API documentation","description":"Document all /tasks endpoints","status":"todo"}'
-curl -i http://localhost:3000/tasks
-curl -i http://localhost:3000/tasks/<taskId>
+curl -i http://localhost:3000/tasks \
+  -H "Authorization: Bearer <token>"
+curl -i http://localhost:3000/tasks/<taskId> \
+  -H "Authorization: Bearer <token>"
 curl -i -X PATCH http://localhost:3000/tasks/<taskId> \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"status":"in_progress"}'
-curl -i -X DELETE http://localhost:3000/tasks/<taskId>
+curl -i -X DELETE http://localhost:3000/tasks/<taskId> \
+  -H "Authorization: Bearer <token>"
 ```
 
 Alternatively, import and run `postman/task-api.postman_collection.json` in Postman.
