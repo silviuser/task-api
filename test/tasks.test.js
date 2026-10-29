@@ -11,10 +11,12 @@ const {
   createTaskController,
   validateCreateTaskInput,
   validateUpdateTaskInput,
+  isValidTaskId,
 } = require("../src/controllers/task-controller");
 
 const TEST_JWT_SECRET = "test-jwt-secret";
 const USER_A_ID = "11111111-1111-4111-8111-111111111111";
+const USER_B_ID = "22222222-2222-4222-8222-222222222222";
 
 function signToken(sub = USER_A_ID, email = "usera@example.com") {
   return jwt.sign({ sub, email }, TEST_JWT_SECRET, { algorithm: "HS256", expiresIn: "1h" });
@@ -285,20 +287,33 @@ test("Concurrent POST /tasks and PATCH /tasks/:id calls serialize safely without
   }
 });
 
-test("task-service throws TASK_NOT_FOUND without status, and task-controller forwards unexpected errors to next", async () => {
+test("task-service throws TASK_NOT_FOUND and TASK_FORBIDDEN without status, and task-controller forwards unexpected errors to next", async () => {
   const checkNotFound = (err) => {
     assert.equal(err.code, "TASK_NOT_FOUND");
     assert.equal(err.message, "Task not found");
     assert.equal(err.status, undefined);
     return true;
   };
+  const checkForbidden = (err) => {
+    assert.equal(err.code, "TASK_FORBIDDEN");
+    assert.equal(err.message, "Forbidden");
+    assert.equal(err.status, undefined);
+    return true;
+  };
 
-  await assert.rejects(taskService.getTaskById("missing", { tasksFile }), checkNotFound);
-  await assert.rejects(taskService.updateTask("missing", { status: "done" }, { tasksFile }), checkNotFound);
-  await assert.rejects(taskService.deleteTask("missing", { tasksFile }), checkNotFound);
+  await assert.rejects(taskService.getTaskById("missing", USER_A_ID, { tasksFile }), checkNotFound);
+  await assert.rejects(taskService.updateTask("missing", { status: "done" }, USER_A_ID, { tasksFile }), checkNotFound);
+  await assert.rejects(taskService.deleteTask("missing", USER_A_ID, { tasksFile }), checkNotFound);
+
+  const ownedTask = await taskService.createTask({ title: "Service owned", userId: USER_A_ID }, { tasksFile });
+  await assert.rejects(taskService.getTaskById(ownedTask.id, USER_B_ID, { tasksFile }), checkForbidden);
+  await assert.rejects(taskService.updateTask(ownedTask.id, { status: "done" }, USER_B_ID, { tasksFile }), checkForbidden);
+  await assert.rejects(taskService.deleteTask(ownedTask.id, USER_B_ID, { tasksFile }), checkForbidden);
 
   assert.equal(validateCreateTaskInput(null), "title is required");
   assert.equal(validateUpdateTaskInput(null), "at least one of title, description, or status is required");
+  assert.equal(isValidTaskId(USER_A_ID), true);
+  assert.equal(isValidTaskId("non-existent-id"), false);
 
   // Point tasksFile at a directory to force an unexpected filesystem error (EISDIR)
   const controller = createTaskController({ tasksFile: tempDir });
@@ -319,4 +334,210 @@ test("task-service throws TASK_NOT_FOUND without status, and task-controller for
   );
   assert.ok(forwarded instanceof Error);
   assert.notEqual(forwarded.code, "TASK_NOT_FOUND");
+});
+
+test("Requests to /tasks without header, with non-Bearer header, malformed token, wrong secret, wrong algorithm, expired token, or missing sub return 401", async () => {
+  const validTaskId = "00000000-0000-4000-8000-000000000000";
+  const endpoints = [
+    { method: "POST", path: "/tasks", body: JSON.stringify({ title: "Test" }) },
+    { method: "GET", path: "/tasks" },
+    { method: "GET", path: `/tasks/${validTaskId}` },
+    { method: "PATCH", path: `/tasks/${validTaskId}`, body: JSON.stringify({ status: "done" }) },
+    { method: "DELETE", path: `/tasks/${validTaskId}` },
+  ];
+
+  for (const { method, path: routePath, body } of endpoints) {
+    const res = await fetch(`${baseUrl}${routePath}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body,
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(await res.json(), { error: "Authentication required" });
+  }
+
+  const wrongSecretToken = jwt.sign({ sub: USER_A_ID, email: "a@example.com" }, "wrong-secret", {
+    algorithm: "HS256",
+    expiresIn: "1h",
+  });
+  const expiredToken = jwt.sign({ sub: USER_A_ID, email: "a@example.com" }, TEST_JWT_SECRET, {
+    algorithm: "HS256",
+    expiresIn: -10,
+  });
+  const hs384Token = jwt.sign({ sub: USER_A_ID, email: "a@example.com" }, TEST_JWT_SECRET, {
+    algorithm: "HS384",
+    expiresIn: "1h",
+  });
+  const unsignedNoneToken = `${Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ sub: USER_A_ID })).toString("base64url")}.`;
+  const missingSubToken = jwt.sign({ email: "a@example.com" }, TEST_JWT_SECRET, {
+    algorithm: "HS256",
+    expiresIn: "1h",
+  });
+
+  const authFailureCases = [
+    { header: "Basic dXNlcjpwYXNz", expected: "Authentication required" },
+    { header: "Bearer", expected: "Authentication required" },
+    { header: "Bearer token with spaces", expected: "Authentication required" },
+    { header: "Bearer not-a-jwt", expected: "Invalid or expired token" },
+    { header: `Bearer ${wrongSecretToken}`, expected: "Invalid or expired token" },
+    { header: `Bearer ${expiredToken}`, expected: "Invalid or expired token" },
+    { header: `Bearer ${hs384Token}`, expected: "Invalid or expired token" },
+    { header: `Bearer ${unsignedNoneToken}`, expected: "Invalid or expired token" },
+    { header: `Bearer ${missingSubToken}`, expected: "Invalid or expired token" },
+  ];
+
+  for (const { header, expected } of authFailureCases) {
+    const res = await fetch(`${baseUrl}/tasks`, {
+      headers: { Authorization: header },
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(await res.json(), { error: expected });
+  }
+});
+
+test("GET /tasks returns only tasks belonging to the authenticated user", async () => {
+  const isolatedFile = path.join(tempDir, "isolated-tasks.json");
+  const isolatedServer = createApp({
+    logger: () => {},
+    tasksFile: isolatedFile,
+    jwtSecret: TEST_JWT_SECRET,
+  }).listen(0);
+  await once(isolatedServer, "listening");
+  const isolatedUrl = `http://localhost:${isolatedServer.address().port}`;
+
+  const tokenA = signToken(USER_A_ID, "usera@example.com");
+  const tokenB = signToken(USER_B_ID, "userb@example.com");
+
+  try {
+    const createARes = await fetch(`${isolatedUrl}/tasks`, {
+      method: "POST",
+      headers: authHeaders(tokenA, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ title: "User A task" }),
+    });
+    assert.equal(createARes.status, 201);
+    const taskA = await createARes.json();
+
+    const createBRes = await fetch(`${isolatedUrl}/tasks`, {
+      method: "POST",
+      headers: authHeaders(tokenB, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ title: "User B task" }),
+    });
+    assert.equal(createBRes.status, 201);
+    const taskB = await createBRes.json();
+
+    const listARes = await fetch(`${isolatedUrl}/tasks`, {
+      headers: authHeaders(tokenA),
+    });
+    assert.equal(listARes.status, 200);
+    assert.deepEqual(await listARes.json(), [taskA]);
+
+    const listBRes = await fetch(`${isolatedUrl}/tasks`, {
+      headers: authHeaders(tokenB),
+    });
+    assert.equal(listBRes.status, 200);
+    assert.deepEqual(await listBRes.json(), [taskB]);
+  } finally {
+    isolatedServer.close();
+  }
+});
+
+test("GET /tasks/:id, PATCH /tasks/:id, and DELETE /tasks/:id return 403 Forbidden for another user's task without modifying data", async () => {
+  const tokenA = signToken(USER_A_ID, "usera@example.com");
+  const tokenB = signToken(USER_B_ID, "userb@example.com");
+
+  const createRes = await fetch(`${baseUrl}/tasks`, {
+    method: "POST",
+    headers: authHeaders(tokenA, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ title: "User A private task", description: "Keep safe", status: "todo" }),
+  });
+  assert.equal(createRes.status, 201);
+  const taskA = await createRes.json();
+
+  const getForbiddenRes = await fetch(`${baseUrl}/tasks/${taskA.id}`, {
+    headers: authHeaders(tokenB),
+  });
+  assert.equal(getForbiddenRes.status, 403);
+  assert.deepEqual(await getForbiddenRes.json(), { error: "Forbidden" });
+
+  const patchForbiddenRes = await fetch(`${baseUrl}/tasks/${taskA.id}`, {
+    method: "PATCH",
+    headers: authHeaders(tokenB, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ title: "Hijacked", status: "done" }),
+  });
+  assert.equal(patchForbiddenRes.status, 403);
+  assert.deepEqual(await patchForbiddenRes.json(), { error: "Forbidden" });
+
+  const deleteForbiddenRes = await fetch(`${baseUrl}/tasks/${taskA.id}`, {
+    method: "DELETE",
+    headers: authHeaders(tokenB),
+  });
+  assert.equal(deleteForbiddenRes.status, 403);
+  assert.deepEqual(await deleteForbiddenRes.json(), { error: "Forbidden" });
+
+  // Verify User A's task was neither modified nor deleted
+  const ownerGetRes = await fetch(`${baseUrl}/tasks/${taskA.id}`, {
+    headers: authHeaders(tokenA),
+  });
+  assert.equal(ownerGetRes.status, 200);
+  assert.deepEqual(await ownerGetRes.json(), taskA);
+});
+
+test("POST /tasks and PATCH /tasks/:id reject unknown or protected fields with 400", async () => {
+  const createRes = await fetch(`${baseUrl}/tasks`, {
+    method: "POST",
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
+    body: JSON.stringify({ title: "Valid task" }),
+  });
+  const created = await createRes.json();
+
+  const forbiddenFields = ["userId", "id", "createdAt", "updatedAt", "extraField"];
+  for (const field of forbiddenFields) {
+    const postRes = await fetch(`${baseUrl}/tasks`, {
+      method: "POST",
+      headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
+      body: JSON.stringify({ title: "Task", [field]: "injected" }),
+    });
+    assert.equal(postRes.status, 400);
+    assert.deepEqual(await postRes.json(), { error: `unknown field: ${field}` });
+
+    const patchRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
+      method: "PATCH",
+      headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: "done", [field]: "injected" }),
+    });
+    assert.equal(patchRes.status, 400);
+    assert.deepEqual(await patchRes.json(), { error: `unknown field: ${field}` });
+  }
+});
+
+test("GET /tasks/:id, PATCH /tasks/:id, and DELETE /tasks/:id with non-UUIDv4 :id return 400 Invalid task id", async () => {
+  const invalidIds = [
+    "non-existent-id",
+    "123",
+    "00000000-0000-0000-0000-000000000000", // nil UUID (version 0)
+    "00000000-0000-1000-8000-000000000000", // UUIDv1
+  ];
+
+  for (const invalidId of invalidIds) {
+    const getRes = await fetch(`${baseUrl}/tasks/${invalidId}`, {
+      headers: authHeaders(),
+    });
+    assert.equal(getRes.status, 400);
+    assert.deepEqual(await getRes.json(), { error: "Invalid task id" });
+
+    const patchRes = await fetch(`${baseUrl}/tasks/${invalidId}`, {
+      method: "PATCH",
+      headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: "done" }),
+    });
+    assert.equal(patchRes.status, 400);
+    assert.deepEqual(await patchRes.json(), { error: "Invalid task id" });
+
+    const deleteRes = await fetch(`${baseUrl}/tasks/${invalidId}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    assert.equal(deleteRes.status, 400);
+    assert.deepEqual(await deleteRes.json(), { error: "Invalid task id" });
+  }
 });

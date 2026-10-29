@@ -184,6 +184,10 @@
             "method": "POST",
             "header": [
               {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -205,6 +209,10 @@
             "method": "POST",
             "header": [
               {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -224,6 +232,23 @@
           "name": "List Tasks - Success (200)",
           "request": {
             "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks"]
+            }
+          }
+        },
+        {
+          "name": "List Tasks - Unauthorized (401)",
+          "request": {
+            "method": "GET",
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/tasks",
@@ -236,7 +261,29 @@
           "name": "Get Task by ID - Success (200)",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks", "{{taskId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Task by ID - Forbidden (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/tasks/{{taskId}}",
               "host": ["{{baseUrl}}"],
@@ -248,11 +295,16 @@
           "name": "Get Task by ID - Not Found (404)",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/tasks/00000000-0000-0000-0000-000000000000",
+              "raw": "{{baseUrl}}/tasks/00000000-0000-4000-8000-000000000000",
               "host": ["{{baseUrl}}"],
-              "path": ["tasks", "00000000-0000-0000-0000-000000000000"]
+              "path": ["tasks", "00000000-0000-4000-8000-000000000000"]
             }
           }
         },
@@ -261,6 +313,10 @@
           "request": {
             "method": "PATCH",
             "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -283,6 +339,10 @@
             "method": "PATCH",
             "header": [
               {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -304,6 +364,10 @@
             "method": "PATCH",
             "header": [
               {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -313,9 +377,9 @@
               "raw": "{\n  \"status\": \"done\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/tasks/00000000-0000-0000-0000-000000000000",
+              "raw": "{{baseUrl}}/tasks/00000000-0000-4000-8000-000000000000",
               "host": ["{{baseUrl}}"],
-              "path": ["tasks", "00000000-0000-0000-0000-000000000000"]
+              "path": ["tasks", "00000000-0000-4000-8000-000000000000"]
             }
           }
         },
@@ -323,7 +387,12 @@
           "name": "Delete Task by ID - Success (204)",
           "request": {
             "method": "DELETE",
-            "header": [],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/tasks/{{taskId}}",
               "host": ["{{baseUrl}}"],
@@ -335,11 +404,16 @@
           "name": "Delete Task by ID - Not Found (404)",
           "request": {
             "method": "DELETE",
-            "header": [],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/tasks/00000000-0000-0000-0000-000000000000",
+              "raw": "{{baseUrl}}/tasks/00000000-0000-4000-8000-000000000000",
               "host": ["{{baseUrl}}"],
-              "path": ["tasks", "00000000-0000-0000-0000-000000000000"]
+              "path": ["tasks", "00000000-0000-4000-8000-000000000000"]
             }
           }
         }
@@ -353,8 +427,13 @@
       "type": "string"
     },
     {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "taskId",
-      "value": "00000000-0000-0000-0000-000000000000",
+      "value": "00000000-0000-4000-8000-000000000000",
       "type": "string"
     }
   ]
