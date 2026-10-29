@@ -4,7 +4,7 @@ artifact: pr
 branch: task-authorization
 base: main
 updated_commit: none
-pr: not created
+pr: https://github.com/silviuser/task-api/pull/7
 ---
 
 # feat(tasks): enforce Bearer JWT authentication, per-user ownership, and strict validation
