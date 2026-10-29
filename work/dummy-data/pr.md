@@ -4,7 +4,7 @@ artifact: pr
 branch: dummy-data
 base: main
 updated_commit: none
-pr: not created
+pr: https://github.com/silviuser/task-api/pull/6
 ---
 
 # feat(seed): add deterministic seed script with fake users and tasks
