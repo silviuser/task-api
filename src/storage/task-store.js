@@ -36,6 +36,13 @@ async function writeTasks(filePath, tasks) {
   await fs.rename(tmp, filePath);
 }
 
+async function resetTasks(options = {}) {
+  const filePath = resolveFilePath(options);
+  return serialize(async () => {
+    await writeTasks(filePath, []);
+  });
+}
+
 async function createTask({ title, description, status }, options = {}) {
   const filePath = resolveFilePath(options);
   return serialize(async () => {
@@ -103,4 +110,5 @@ module.exports = {
   getTaskById,
   updateTask,
   deleteTask,
+  resetTasks,
 };
