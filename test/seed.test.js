@@ -145,7 +145,9 @@ test("POST /auth/login with a seeded user's email and DEFAULT_SEED_PASSWORD retu
     const loginBody = await loginRes.json();
     assert.ok(typeof loginBody.token === "string" && loginBody.token.split(".").length === 3);
 
-    const tasksRes = await fetch(`${baseUrl}/tasks`);
+    const tasksRes = await fetch(`${baseUrl}/tasks`, {
+      headers: { Authorization: `Bearer ${loginBody.token}` },
+    });
     assert.equal(tasksRes.status, 200);
     const tasksBody = await tasksRes.json();
     assert.equal(tasksBody.length, 3);

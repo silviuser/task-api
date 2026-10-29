@@ -4,6 +4,7 @@ const { once } = require("node:events");
 const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const jwt = require("jsonwebtoken");
 const { createApp } = require("../src/app");
 const taskService = require("../src/services/task-service");
 const {
@@ -13,6 +14,18 @@ const {
 } = require("../src/controllers/task-controller");
 
 const TEST_JWT_SECRET = "test-jwt-secret";
+const USER_A_ID = "11111111-1111-4111-8111-111111111111";
+
+function signToken(sub = USER_A_ID, email = "usera@example.com") {
+  return jwt.sign({ sub, email }, TEST_JWT_SECRET, { algorithm: "HS256", expiresIn: "1h" });
+}
+
+function authHeaders(token = signToken(), extra = {}) {
+  return {
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  };
+}
 
 let server;
 let baseUrl;
@@ -43,20 +56,24 @@ after(async () => {
 });
 
 test("GET /tasks returns an empty array initially and returns all stored tasks after creation", async () => {
-  const initialRes = await fetch(`${baseUrl}/tasks`);
+  const initialRes = await fetch(`${baseUrl}/tasks`, {
+    headers: authHeaders(),
+  });
   assert.equal(initialRes.status, 200);
   const initialBody = await initialRes.json();
   assert.deepEqual(initialBody, []);
 
   const createRes = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ title: "First task", description: "Details", status: "in_progress" }),
   });
   assert.equal(createRes.status, 201);
   const created = await createRes.json();
 
-  const listRes = await fetch(`${baseUrl}/tasks`);
+  const listRes = await fetch(`${baseUrl}/tasks`, {
+    headers: authHeaders(),
+  });
   assert.equal(listRes.status, 200);
   const listBody = await listRes.json();
   assert.equal(listBody.length, 1);
@@ -66,7 +83,7 @@ test("GET /tasks returns an empty array initially and returns all stored tasks a
 test("POST /tasks with valid payload returns 201, Location header, defaults description/status, and ignores unknown fields", async () => {
   const res = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({
       title: "  Buy groceries  ",
       extraField: "should be ignored",
@@ -102,7 +119,7 @@ test("POST /tasks with invalid title, description, or status returns 400", async
   for (const { payload, expected } of cases) {
     const res = await fetch(`${baseUrl}/tasks`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
 
@@ -115,17 +132,21 @@ test("POST /tasks with invalid title, description, or status returns 400", async
 test("GET /tasks/:id returns 200 with matching task or 404 when missing", async () => {
   const createRes = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ title: "Lookup task" }),
   });
   const created = await createRes.json();
 
-  const getRes = await fetch(`${baseUrl}/tasks/${created.id}`);
+  const getRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
+    headers: authHeaders(),
+  });
   assert.equal(getRes.status, 200);
   const fetched = await getRes.json();
   assert.deepEqual(fetched, created);
 
-  const missingRes = await fetch(`${baseUrl}/tasks/non-existent-id`);
+  const missingRes = await fetch(`${baseUrl}/tasks/non-existent-id`, {
+    headers: authHeaders(),
+  });
   assert.equal(missingRes.status, 404);
   const missingBody = await missingRes.json();
   assert.deepEqual(missingBody, { error: "Task not found" });
@@ -134,14 +155,14 @@ test("GET /tasks/:id returns 200 with matching task or 404 when missing", async 
 test("PATCH /tasks/:id updates only provided fields, refreshes updatedAt, and returns 400 or 404 on errors", async () => {
   const createRes = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ title: "Original title", description: "Original desc", status: "todo" }),
   });
   const created = await createRes.json();
 
   const patchRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ title: "  Updated title  ", status: "done", ignored: true }),
   });
   assert.equal(patchRes.status, 200);
@@ -168,7 +189,7 @@ test("PATCH /tasks/:id updates only provided fields, refreshes updatedAt, and re
   for (const { payload, expected } of invalidCases) {
     const badRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
     assert.equal(badRes.status, 400);
@@ -177,7 +198,7 @@ test("PATCH /tasks/:id updates only provided fields, refreshes updatedAt, and re
 
   const missingRes = await fetch(`${baseUrl}/tasks/non-existent-id`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ status: "done" }),
   });
   assert.equal(missingRes.status, 404);
@@ -187,22 +208,26 @@ test("PATCH /tasks/:id updates only provided fields, refreshes updatedAt, and re
 test("DELETE /tasks/:id returns 204 with empty body and removes task, or returns 404 when missing", async () => {
   const createRes = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ title: "Task to delete" }),
   });
   const created = await createRes.json();
 
   const deleteRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
   assert.equal(deleteRes.status, 204);
   assert.equal(await deleteRes.text(), "");
 
-  const getAfterDelete = await fetch(`${baseUrl}/tasks/${created.id}`);
+  const getAfterDelete = await fetch(`${baseUrl}/tasks/${created.id}`, {
+    headers: authHeaders(),
+  });
   assert.equal(getAfterDelete.status, 404);
 
   const deleteAgainRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
   assert.equal(deleteAgainRes.status, 404);
   assert.deepEqual(await deleteAgainRes.json(), { error: "Task not found" });
@@ -222,7 +247,7 @@ test("Concurrent POST /tasks and PATCH /tasks/:id calls serialize safely without
     const createRequests = Array.from({ length: 5 }, (_, i) =>
       fetch(`${concurrentUrl}/tasks`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
         body: JSON.stringify({ title: `Concurrent task ${i}` }),
       }).then(async (r) => {
         assert.equal(r.status, 201);
@@ -237,17 +262,19 @@ test("Concurrent POST /tasks and PATCH /tasks/:id calls serialize safely without
     await Promise.all([
       fetch(`${concurrentUrl}/tasks/${targetId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
         body: JSON.stringify({ description: "Updated description" }),
       }),
       fetch(`${concurrentUrl}/tasks/${targetId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
         body: JSON.stringify({ status: "done" }),
       }),
     ]);
 
-    const finalRes = await fetch(`${concurrentUrl}/tasks`);
+    const finalRes = await fetch(`${concurrentUrl}/tasks`, {
+      headers: authHeaders(),
+    });
     const finalTasks = await finalRes.json();
     assert.equal(finalTasks.length, 5);
 
