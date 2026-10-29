@@ -8,14 +8,7 @@ const DUMMY_PASSWORD_HASH = "$2b$10$H59/MKXi10CBrp8brax7duDggewgxngBn52fc7imdDRu
 async function registerUser({ email, password }, options = {}) {
   // bcrypt only uses up to 72 bytes; cost factor 10 per SEC-1
   const passwordHash = await bcrypt.hash(password, 10);
-  try {
-    return await createUser({ email: email.trim(), passwordHash }, options);
-  } catch (err) {
-    if (err.code === "DUPLICATE_EMAIL") {
-      err.status = 409;
-    }
-    throw err;
-  }
+  return createUser({ email: email.trim(), passwordHash }, options);
 }
 
 async function loginUser({ email, password }, options = {}) {
@@ -26,7 +19,6 @@ async function loginUser({ email, password }, options = {}) {
   if (!user || !matches) {
     const err = new Error("Invalid email or password");
     err.code = "INVALID_CREDENTIALS";
-    err.status = 401;
     throw err;
   }
   const token = jwt.sign({ sub: user.id, email: user.email }, options.jwtSecret, {
