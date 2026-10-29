@@ -80,13 +80,12 @@ test("GET /tasks returns an empty array initially and returns all stored tasks a
   assert.deepEqual(listBody[0], created);
 });
 
-test("POST /tasks with valid payload returns 201, Location header, defaults description/status, and ignores unknown fields", async () => {
+test("POST /tasks with valid payload returns 201, Location header, defaults description/status, and persists userId", async () => {
   const res = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
     headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({
       title: "  Buy groceries  ",
-      extraField: "should be ignored",
     }),
   });
 
@@ -94,13 +93,13 @@ test("POST /tasks with valid payload returns 201, Location header, defaults desc
   const body = await res.json();
 
   assert.ok(typeof body.id === "string" && body.id.length > 0);
+  assert.equal(body.userId, USER_A_ID);
   assert.equal(body.title, "Buy groceries");
   assert.equal(body.description, "");
   assert.equal(body.status, "todo");
   assert.ok(typeof body.createdAt === "string");
   assert.ok(typeof body.updatedAt === "string");
   assert.equal(body.createdAt, body.updatedAt);
-  assert.equal(body.extraField, undefined);
   assert.equal(res.headers.get("Location"), `/tasks/${body.id}`);
 });
 
@@ -144,7 +143,7 @@ test("GET /tasks/:id returns 200 with matching task or 404 when missing", async 
   const fetched = await getRes.json();
   assert.deepEqual(fetched, created);
 
-  const missingRes = await fetch(`${baseUrl}/tasks/non-existent-id`, {
+  const missingRes = await fetch(`${baseUrl}/tasks/00000000-0000-4000-8000-000000000000`, {
     headers: authHeaders(),
   });
   assert.equal(missingRes.status, 404);
@@ -163,22 +162,22 @@ test("PATCH /tasks/:id updates only provided fields, refreshes updatedAt, and re
   const patchRes = await fetch(`${baseUrl}/tasks/${created.id}`, {
     method: "PATCH",
     headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
-    body: JSON.stringify({ title: "  Updated title  ", status: "done", ignored: true }),
+    body: JSON.stringify({ title: "  Updated title  ", status: "done" }),
   });
   assert.equal(patchRes.status, 200);
   const updated = await patchRes.json();
 
   assert.equal(updated.id, created.id);
+  assert.equal(updated.userId, USER_A_ID);
   assert.equal(updated.title, "Updated title");
   assert.equal(updated.description, "Original desc");
   assert.equal(updated.status, "done");
   assert.equal(updated.createdAt, created.createdAt);
   assert.ok(Date.parse(updated.updatedAt) >= Date.parse(created.updatedAt));
-  assert.equal(updated.ignored, undefined);
 
   const invalidCases = [
     { payload: {}, expected: "at least one of title, description, or status is required" },
-    { payload: { unknown: "x" }, expected: "at least one of title, description, or status is required" },
+    { payload: { unknown: "x" }, expected: "unknown field: unknown" },
     { payload: { title: "   " }, expected: "title must be a non-empty string" },
     { payload: { title: "a".repeat(201) }, expected: "title must not exceed 200 characters" },
     { payload: { description: 123 }, expected: "description must be a string" },
@@ -196,7 +195,7 @@ test("PATCH /tasks/:id updates only provided fields, refreshes updatedAt, and re
     assert.deepEqual(await badRes.json(), { error: expected });
   }
 
-  const missingRes = await fetch(`${baseUrl}/tasks/non-existent-id`, {
+  const missingRes = await fetch(`${baseUrl}/tasks/00000000-0000-4000-8000-000000000000`, {
     method: "PATCH",
     headers: authHeaders(signToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify({ status: "done" }),
@@ -305,7 +304,7 @@ test("task-service throws TASK_NOT_FOUND without status, and task-controller for
   const controller = createTaskController({ tasksFile: tempDir });
   let forwarded;
   await controller.list(
-    {},
+    { user: { sub: USER_A_ID } },
     {
       status() {
         return this;

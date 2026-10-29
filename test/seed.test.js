@@ -150,8 +150,8 @@ test("POST /auth/login with a seeded user's email and DEFAULT_SEED_PASSWORD retu
     });
     assert.equal(tasksRes.status, 200);
     const tasksBody = await tasksRes.json();
-    assert.equal(tasksBody.length, 3);
-    assert.deepEqual(tasksBody, tasks);
+    const expectedTasks = tasks.filter((t) => t.userId === users[0].id);
+    assert.deepEqual(tasksBody, expectedTasks);
   } finally {
     server.close();
   }
