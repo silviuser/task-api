@@ -34,6 +34,14 @@ function getDb(options = {}) {
       projectId,
     );
   const db = existing ? getFirestore(existing) : initializeFirestore(app, { preferRest: true });
+  if (!existing && process.env.FIRESTORE_EMULATOR_HOST) {
+    db.settings({
+      authClient: {
+        getRequestHeaders: async () => ({ Authorization: "Bearer owner" }),
+        fetch: (url, init) => fetch(url, init),
+      },
+    });
+  }
   dbCache.set(projectId, db);
   return db;
 }
