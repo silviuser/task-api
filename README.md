@@ -9,6 +9,7 @@ A REST API for personal tasks (to-dos): users register, sign in with a JSON Web 
 | Health check | `GET /health` | `app-foundation` |
 | User registration | `POST /auth/register` | `user-registration` |
 | User login | `POST /auth/login` | `user-login` |
+| Task CRUD | `POST /tasks`, `GET /tasks`, `GET /tasks/:id`, `PATCH /tasks/:id`, `DELETE /tasks/:id` | `task-crud` |
 
 ## Requirements
 
@@ -27,7 +28,8 @@ npm ci
 | Setting | Meaning | Default |
 | --- | --- | --- |
 | `PORT` | HTTP port the server listens on | `3000` |
-| `DATA_FILE` | Path to local JSON file for persistence | `data/users.json` |
+| `DATA_FILE` | Path to local JSON file for user persistence | `data/users.json` |
+| `TASKS_FILE` | Path to local JSON file for task persistence | `data/tasks.json` |
 | `JWT_SECRET` | Secret key used to sign and verify JSON Web Tokens | required (no default) |
 
 ## Run
@@ -63,6 +65,15 @@ curl -i -X POST http://localhost:3000/auth/login \
 curl -i -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"WrongPassword!"}'
+curl -i -X POST http://localhost:3000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Write API documentation","description":"Document all /tasks endpoints","status":"todo"}'
+curl -i http://localhost:3000/tasks
+curl -i http://localhost:3000/tasks/<taskId>
+curl -i -X PATCH http://localhost:3000/tasks/<taskId> \
+  -H "Content-Type: application/json" \
+  -d '{"status":"in_progress"}'
+curl -i -X DELETE http://localhost:3000/tasks/<taskId>
 ```
 
 Alternatively, import and run `postman/task-api.postman_collection.json` in Postman.
