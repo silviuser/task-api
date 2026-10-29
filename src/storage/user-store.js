@@ -30,6 +30,20 @@ async function readUsers(options = {}) {
   }
 }
 
+async function writeUsers(filePath, users) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(users, null, 2), "utf8");
+  await fs.rename(tmp, filePath);
+}
+
+async function resetUsers(options = {}) {
+  const filePath = resolveFilePath(options);
+  return serialize(async () => {
+    await writeUsers(filePath, []);
+  });
+}
+
 async function createUser({ email, passwordHash }, options = {}) {
   const filePath = resolveFilePath(options);
 
@@ -52,10 +66,7 @@ async function createUser({ email, passwordHash }, options = {}) {
 
     users.push(user);
 
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const tmp = `${filePath}.${crypto.randomUUID()}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(users, null, 2), "utf8");
-    await fs.rename(tmp, filePath);
+    await writeUsers(filePath, users);
 
     return {
       id: user.id,
@@ -79,4 +90,5 @@ module.exports = {
   createUser,
   findUserByEmail,
   readUsers,
+  resetUsers,
 };
