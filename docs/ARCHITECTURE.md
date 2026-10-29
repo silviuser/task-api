@@ -17,11 +17,12 @@ A stateless REST API: Node.js 22 or newer, Express 5, CommonJS modules. Clients 
 | Auth router | `src/routes/auth.js` | `createAuthRouter(options)` binds `POST /auth/register` and `POST /auth/login` to the auth controller |
 | Auth controller | `src/controllers/auth-controller.js` | Validates register and login input (400), calls the auth service, formats 201 with `Location` or 200 `{ token }`, maps `DUPLICATE_EMAIL` to 409 and `INVALID_CREDENTIALS` to 401, forwards other errors to `next` |
 | Auth service | `src/services/auth-service.js` | `registerUser` (bcrypt hashing, user creation) and `loginUser` (timing-protected bcrypt verification, JWT signing); throws domain errors with `err.code` only (`DUPLICATE_EMAIL`, `INVALID_CREDENTIALS`), no Express dependency |
-| User storage | `src/storage/user-store.js` | Promise-serialized local JSON persistence with atomic file writes, duplicate email check, and case-insensitive email lookup |
+| User storage | `src/storage/user-store.js` | Promise-serialized local JSON persistence (`createUser`, `findUserByEmail`, `resetUsers`) with atomic file writes, duplicate email check, and case-insensitive email lookup |
 | Tasks router | `src/routes/tasks.js` | `createTasksRouter(options)` binds `POST /`, `GET /`, `GET /:id`, `PATCH /:id`, and `DELETE /:id` at `/tasks` to the task controller (`task-crud`) |
 | Task controller | `src/controllers/task-controller.js` | Validates create and partial-update payloads (400), calls the task service, formats 201 (`Location: /tasks/:id`), 200, or 204 responses, and maps `TASK_NOT_FOUND` to 404 (`task-crud`) |
 | Task service | `src/services/task-service.js` | `createTask`, `listTasks`, `getTaskById`, `updateTask`, and `deleteTask` domain logic; trims titles, applies defaults, and throws `TASK_NOT_FOUND` without `err.status` (`task-crud`) |
-| Task storage | `src/storage/task-store.js` | Promise-serialized local JSON persistence (`createTask`, `listTasks`, `getTaskById`, `updateTask`, `deleteTask`) with atomic `.tmp` rename writes (`task-crud`) |
+| Task storage | `src/storage/task-store.js` | Promise-serialized local JSON persistence (`createTask`, `listTasks`, `getTaskById`, `updateTask`, `deleteTask`, `resetTasks`) with atomic `.tmp` rename writes (`task-crud`, `dummy-data`) |
+| Seed script | `src/seed.js` | Deterministic CLI (`npm run seed`) and programmatic `seedData(options)` helper that populates `data/seed-users.json` and `data/seed-tasks.json` via `user-store`, `task-store`, and `task-service` (`dummy-data`) |
 
 ## Data model
 
@@ -53,3 +54,4 @@ Incoming HTTP request -> `express.json()` -> `requestLogger` (records start time
 | D13 | Separate `src/storage/task-store.js` (`TASKS_FILE`, default `data/tasks.json`) with promise-serialized atomic `.tmp` rename writes | Isolates task persistence from `user-store.js` and prevents concurrent write races (`DATA-3`, `DATA-5`) | `task-crud` |
 | D14 | Partial task updates via `PATCH /tasks/:id` only (no `PUT /tasks/:id`) | Matches `API-2` and `DATA-6` directly while avoiding duplicate update endpoints | `task-crud` |
 | D15 | Services set domain `err.code` only (`DUPLICATE_EMAIL`, `INVALID_CREDENTIALS`, `TASK_NOT_FOUND`); controllers map codes to HTTP status | Keeps services transport-agnostic (`API-6`, `D10`, `D11`) and resolves `TD-controllers-services-F1` | `task-crud` |
+| D16 | Deterministic seed generation with `@faker-js/faker` (`devDependencies`) writing to isolated default files `data/seed-users.json` and `data/seed-tasks.json` via `resetUsers` and `resetTasks` | Keeps seed data separate from real application files (`DATA-7`), avoids new runtime dependencies, and preserves serialized atomic writes (`DATA-1`, `DATA-3`) | `dummy-data` |
