@@ -6,30 +6,52 @@ function createTaskNotFoundError() {
   return err;
 }
 
+function createTaskForbiddenError() {
+  const err = new Error("Forbidden");
+  err.code = "TASK_FORBIDDEN";
+  return err;
+}
+
 async function createTask(data, options = {}) {
   return taskStore.createTask(
     {
       title: data.title.trim(),
       description: data.description ?? "",
       status: data.status ?? "todo",
+      userId: data.userId,
     },
     options,
   );
 }
 
-async function listTasks(options = {}) {
-  return taskStore.listTasks(options);
+async function listTasks(userId, options = {}) {
+  if (typeof userId === "object" && userId !== null) {
+    return taskStore.listTasks(userId);
+  }
+  return taskStore.listTasks({ ...options, userId });
 }
 
-async function getTaskById(id, options = {}) {
+async function getTaskById(id, userId, options = {}) {
+  if (typeof userId === "object" && userId !== null) {
+    options = userId;
+    userId = undefined;
+  }
   const task = await taskStore.getTaskById(id, options);
   if (!task) {
     throw createTaskNotFoundError();
   }
+  if (task.userId !== userId) {
+    throw createTaskForbiddenError();
+  }
   return task;
 }
 
-async function updateTask(id, updates, options = {}) {
+async function updateTask(id, updates, userId, options = {}) {
+  if (typeof userId === "object" && userId !== null) {
+    options = userId;
+    userId = undefined;
+  }
+  await getTaskById(id, userId, options);
   const patch = {};
   if (updates.title !== undefined) {
     patch.title = updates.title.trim();
@@ -47,7 +69,12 @@ async function updateTask(id, updates, options = {}) {
   return task;
 }
 
-async function deleteTask(id, options = {}) {
+async function deleteTask(id, userId, options = {}) {
+  if (typeof userId === "object" && userId !== null) {
+    options = userId;
+    userId = undefined;
+  }
+  await getTaskById(id, userId, options);
   const deleted = await taskStore.deleteTask(id, options);
   if (!deleted) {
     throw createTaskNotFoundError();

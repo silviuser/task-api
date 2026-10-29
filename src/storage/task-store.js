@@ -43,13 +43,14 @@ async function resetTasks(options = {}) {
   });
 }
 
-async function createTask({ title, description, status }, options = {}) {
+async function createTask({ title, description, status, userId }, options = {}) {
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
     const now = new Date().toISOString();
     const task = {
       id: crypto.randomUUID(),
+      ...(userId !== undefined ? { userId } : {}),
       title,
       description,
       status,
@@ -66,7 +67,11 @@ async function listTasks(options = {}) {
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
-    return tasks.map((t) => ({ ...t }));
+    const filtered =
+      options && typeof options === "object" && options.userId !== undefined
+        ? tasks.filter((t) => t.userId === String(options.userId))
+        : tasks;
+    return filtered.map((t) => ({ ...t }));
   });
 }
 

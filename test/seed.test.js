@@ -107,16 +107,18 @@ test("Running seedData() twice on pre-populated files atomically replaces conten
   assert.ok(!storedUsers.some((u) => u.email === "stale@example.com"));
   assert.ok(!storedTasks.some((t) => t.title === "Stale task"));
 
-  // All 3 statuses represented and field constraints satisfied
+  // All 3 statuses represented, field constraints satisfied, and deterministic userId assigned
   const statuses = new Set(secondRun.tasks.map((t) => t.status));
   assert.deepEqual([...statuses].sort(), ["done", "in_progress", "todo"]);
-  for (const task of secondRun.tasks) {
+  for (let i = 0; i < secondRun.tasks.length; i += 1) {
+    const task = secondRun.tasks[i];
     assert.ok(task.title.length > 0 && task.title.length <= 200);
     assert.ok(typeof task.description === "string" && task.description.length <= 1000);
+    assert.equal(task.userId, secondRun.users[i % secondRun.users.length].id);
   }
 });
 
-test("POST /auth/login with a seeded user's email and DEFAULT_SEED_PASSWORD returns 200 with a JWT, and GET /tasks returns seeded tasks", async () => {
+test("POST /auth/login with a seeded user's email and DEFAULT_SEED_PASSWORD returns 200 with a JWT, and GET /tasks returns only that user's seeded tasks", async () => {
   const dataFile = path.join(tempDir, "http-users.json");
   const tasksFile = path.join(tempDir, "http-tasks.json");
 
@@ -145,11 +147,14 @@ test("POST /auth/login with a seeded user's email and DEFAULT_SEED_PASSWORD retu
     const loginBody = await loginRes.json();
     assert.ok(typeof loginBody.token === "string" && loginBody.token.split(".").length === 3);
 
-    const tasksRes = await fetch(`${baseUrl}/tasks`);
+    const tasksRes = await fetch(`${baseUrl}/tasks`, {
+      headers: { Authorization: `Bearer ${loginBody.token}` },
+    });
     assert.equal(tasksRes.status, 200);
     const tasksBody = await tasksRes.json();
-    assert.equal(tasksBody.length, 3);
-    assert.deepEqual(tasksBody, tasks);
+    const expectedTasks = tasks.filter((t) => t.userId === users[0].id);
+    assert.equal(tasksBody.length, 2);
+    assert.deepEqual(tasksBody, expectedTasks);
   } finally {
     server.close();
   }
