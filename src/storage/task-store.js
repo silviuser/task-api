@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { getDb, isFirestoreEnabled } = require("./firestore");
 
 let queue = Promise.resolve();
 
@@ -15,6 +16,10 @@ function resolveFilePath(options = {}) {
     return path.resolve(options);
   }
   return options.tasksFile ?? process.env.TASKS_FILE ?? path.resolve("data/tasks.json");
+}
+
+function getTasksCollection(options = {}) {
+  return getDb(options).collection(options?.tasksCollection ?? "tasks");
 }
 
 async function readTasks(filePath) {
@@ -37,6 +42,19 @@ async function writeTasks(filePath, tasks) {
 }
 
 async function resetTasks(options = {}) {
+  if (isFirestoreEnabled(options, "tasksFile")) {
+    const db = getDb(options);
+    const snap = await getTasksCollection(options).get();
+    if (snap.empty) {
+      return;
+    }
+    const batch = db.batch();
+    for (const doc of snap.docs) {
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+    return;
+  }
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     await writeTasks(filePath, []);
@@ -44,6 +62,20 @@ async function resetTasks(options = {}) {
 }
 
 async function createTask({ title, description, status, userId }, options = {}) {
+  if (isFirestoreEnabled(options, "tasksFile")) {
+    const now = new Date().toISOString();
+    const task = {
+      id: crypto.randomUUID(),
+      ...(userId !== undefined ? { userId } : {}),
+      title,
+      description,
+      status,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await getTasksCollection(options).doc(task.id).set(task);
+    return { ...task };
+  }
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
@@ -64,6 +96,15 @@ async function createTask({ title, description, status, userId }, options = {}) 
 }
 
 async function listTasks(options = {}) {
+  if (isFirestoreEnabled(options, "tasksFile")) {
+    const col = getTasksCollection(options);
+    const query =
+      options && typeof options === "object" && options.userId !== undefined
+        ? col.where("userId", "==", String(options.userId))
+        : col;
+    const snap = await query.get();
+    return snap.docs.map((doc) => ({ ...doc.data() }));
+  }
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
@@ -76,6 +117,10 @@ async function listTasks(options = {}) {
 }
 
 async function getTaskById(id, options = {}) {
+  if (isFirestoreEnabled(options, "tasksFile")) {
+    const doc = await getTasksCollection(options).doc(String(id)).get();
+    return doc.exists ? { ...doc.data() } : null;
+  }
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
@@ -85,6 +130,17 @@ async function getTaskById(id, options = {}) {
 }
 
 async function updateTask(id, updates, options = {}) {
+  if (isFirestoreEnabled(options, "tasksFile")) {
+    const db = getDb(options);
+    const docRef = getTasksCollection(options).doc(String(id));
+    return db.runTransaction(async (tx) => {
+      const doc = await tx.get(docRef);
+      if (!doc.exists) return null;
+      const updated = { ...doc.data(), ...updates, updatedAt: new Date().toISOString() };
+      tx.update(docRef, { ...updates, updatedAt: updated.updatedAt });
+      return { ...updated };
+    });
+  }
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
@@ -98,6 +154,16 @@ async function updateTask(id, updates, options = {}) {
 }
 
 async function deleteTask(id, options = {}) {
+  if (isFirestoreEnabled(options, "tasksFile")) {
+    const db = getDb(options);
+    const docRef = getTasksCollection(options).doc(String(id));
+    return db.runTransaction(async (tx) => {
+      const doc = await tx.get(docRef);
+      if (!doc.exists) return false;
+      tx.delete(docRef);
+      return true;
+    });
+  }
   const filePath = resolveFilePath(options);
   return serialize(async () => {
     const tasks = await readTasks(filePath);
