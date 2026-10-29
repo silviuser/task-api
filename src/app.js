@@ -18,7 +18,7 @@ function createApp(options = {}) {
 
   app.use("/health", healthRouter);
   app.use("/auth", createAuthRouter({ ...options, jwtSecret }));
-  app.use("/tasks", createTasksRouter(options));
+  app.use("/tasks", createTasksRouter({ ...options, jwtSecret }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

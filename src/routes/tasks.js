@@ -1,9 +1,12 @@
 const express = require("express");
+const { createAuthenticate } = require("../middleware/authenticate");
 const { createTaskController } = require("../controllers/task-controller");
 
 function createTasksRouter(options = {}) {
   const router = express.Router();
   const { create, list, getById, update, remove } = createTaskController(options);
+
+  router.use(createAuthenticate(options));
 
   router.post("/", create);
   router.get("/", list);
