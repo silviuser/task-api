@@ -10,6 +10,7 @@ A REST API for personal tasks (to-dos): users register, sign in with a JSON Web 
 | User registration | `POST /auth/register` | `user-registration` |
 | User login | `POST /auth/login` | `user-login` |
 | Task CRUD | `POST /tasks`, `GET /tasks`, `GET /tasks/:id`, `PATCH /tasks/:id`, `DELETE /tasks/:id` | `task-crud` |
+| Seed data | `npm run seed` (`seedData` in `src/seed.js`) | `dummy-data` |
 | Task authorization | Bearer JWT authentication, per-user task ownership (`userId`), and strict allow-list/UUIDv4 validation on `/tasks` | `task-authorization` |
 
 ## Requirements
@@ -29,8 +30,8 @@ npm ci
 | Setting | Meaning | Default |
 | --- | --- | --- |
 | `PORT` | HTTP port the server listens on | `3000` |
-| `DATA_FILE` | Path to local JSON file for user persistence | `data/users.json` |
-| `TASKS_FILE` | Path to local JSON file for task persistence | `data/tasks.json` |
+| `DATA_FILE` | Path to local JSON file for user persistence (`data/seed-users.json` for `npm run seed`) | `data/users.json` |
+| `TASKS_FILE` | Path to local JSON file for task persistence (`data/seed-tasks.json` for `npm run seed`) | `data/tasks.json` |
 | `JWT_SECRET` | Secret key used to sign and verify JSON Web Tokens | required (no default) |
 
 ## Run
@@ -43,6 +44,13 @@ In development, with `.env` loaded (`JWT_SECRET=...`) and automatic restart on c
 
 ```bash
 npm run dev
+```
+
+To populate isolated seed files (`data/seed-users.json` with 5 users and password `"Password123!"`, and `data/seed-tasks.json` with 15 tasks) and start the server against them:
+
+```bash
+npm run seed
+DATA_FILE=data/seed-users.json TASKS_FILE=data/seed-tasks.json JWT_SECRET=dev-secret-key npm start
 ```
 
 ## Test
