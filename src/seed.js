@@ -48,7 +48,8 @@ async function seedData(options = {}) {
     const title = faker.hacker.phrase().slice(0, MAX_TITLE_LENGTH);
     const description = faker.lorem.sentence().slice(0, MAX_DESCRIPTION_LENGTH);
     const status = TASK_STATUSES[i % TASK_STATUSES.length];
-    tasks.push(await taskService.createTask({ title, description, status }, { tasksFile }));
+    const userId = users.length > 0 ? users[i % users.length].id : undefined;
+    tasks.push(await taskService.createTask({ title, description, status, userId }, { tasksFile }));
   }
 
   return { users, tasks, dataFile, tasksFile };
