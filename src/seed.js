@@ -1,6 +1,7 @@
 const path = require("node:path");
 const bcrypt = require("bcryptjs");
 const { faker } = require("@faker-js/faker");
+const { isFirestoreEnabled } = require("./storage/firestore");
 const userStore = require("./storage/user-store");
 const taskStore = require("./storage/task-store");
 const taskService = require("./services/task-service");
@@ -25,14 +26,26 @@ function generateUniqueEmail(usedEmails) {
 }
 
 async function seedData(options = {}) {
+  const useFirestore =
+    (Boolean(options.useFirestore) || (!process.env.DATA_FILE && !process.env.TASKS_FILE)) &&
+    isFirestoreEnabled(options, "dataFile") &&
+    isFirestoreEnabled(options, "tasksFile");
   const dataFile = options.dataFile ?? process.env.DATA_FILE ?? path.resolve("data/seed-users.json");
   const tasksFile = options.tasksFile ?? process.env.TASKS_FILE ?? path.resolve("data/seed-tasks.json");
+  const storeOptions = useFirestore
+    ? {
+        ...options,
+        useFirestore: true,
+        usersCollection: options.usersCollection ?? "seed_users",
+        tasksCollection: options.tasksCollection ?? "seed_tasks",
+      }
+    : { dataFile, tasksFile };
   const userCount = options.userCount ?? DEFAULT_USER_COUNT;
   const taskCount = options.taskCount ?? DEFAULT_TASK_COUNT;
   const password = options.password ?? DEFAULT_SEED_PASSWORD;
 
   faker.seed(options.seed ?? DEFAULT_FAKER_SEED);
-  await Promise.all([userStore.resetUsers({ dataFile }), taskStore.resetTasks({ tasksFile })]);
+  await Promise.all([userStore.resetUsers(storeOptions), taskStore.resetTasks(storeOptions)]);
 
   // Pre-hash the shared seed password with cost 10 so every seeded user can log in via /auth/login (SEC-1).
   const passwordHash = await bcrypt.hash(password, 10);
@@ -40,7 +53,7 @@ async function seedData(options = {}) {
   const users = [];
   for (let i = 0; i < userCount; i += 1) {
     const email = generateUniqueEmail(usedEmails);
-    users.push(await userStore.createUser({ email, passwordHash }, { dataFile }));
+    users.push(await userStore.createUser({ email, passwordHash }, storeOptions));
   }
 
   const tasks = [];
@@ -49,17 +62,26 @@ async function seedData(options = {}) {
     const description = faker.lorem.sentence().slice(0, MAX_DESCRIPTION_LENGTH);
     const status = TASK_STATUSES[i % TASK_STATUSES.length];
     const userId = users.length > 0 ? users[i % users.length].id : undefined;
-    tasks.push(await taskService.createTask({ title, description, status, userId }, { tasksFile }));
+    tasks.push(await taskService.createTask({ title, description, status, userId }, storeOptions));
   }
 
-  return { users, tasks, dataFile, tasksFile };
+  return useFirestore
+    ? {
+        users,
+        tasks,
+        usersCollection: storeOptions.usersCollection,
+        tasksCollection: storeOptions.tasksCollection,
+      }
+    : { users, tasks, dataFile, tasksFile };
 }
 
 if (require.main === module) {
   seedData()
-    .then(({ users, tasks, dataFile, tasksFile }) => {
+    .then(({ users, tasks, dataFile, tasksFile, usersCollection, tasksCollection }) => {
       // Never include passwords or password hashes in logs (SEC-10).
-      console.log(`Seeded ${users.length} users (${dataFile}) and ${tasks.length} tasks (${tasksFile})`);
+      const usersTarget = dataFile ?? usersCollection;
+      const tasksTarget = tasksFile ?? tasksCollection;
+      console.log(`Seeded ${users.length} users (${usersTarget}) and ${tasks.length} tasks (${tasksTarget})`);
     })
     .catch((error) => {
       console.error(error);

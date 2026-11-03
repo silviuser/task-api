@@ -4,3 +4,6 @@ node_modules/
 serviceAccountKey.json
 data/
 coverage/
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
