@@ -1,6 +1,6 @@
 # Task API
 
-A REST API for personal tasks (to-dos): users register, sign in with a JSON Web Token and manage their own tasks. Node.js and Express 5; data in a local JSON file first, in Cloud Firestore later.
+A REST API for personal tasks (to-dos): users register, sign in with a JSON Web Token and manage their own tasks. Node.js and Express 5; data persists in Cloud Firestore or local JSON files behind a shared storage layer.
 
 ## Features
 
@@ -12,6 +12,7 @@ A REST API for personal tasks (to-dos): users register, sign in with a JSON Web 
 | Task CRUD | `POST /tasks`, `GET /tasks`, `GET /tasks/:id`, `PATCH /tasks/:id`, `DELETE /tasks/:id` | `task-crud` |
 | Seed data | `npm run seed` (`seedData` in `src/seed.js`) | `dummy-data` |
 | Task authorization | Bearer JWT authentication, per-user task ownership (`userId`), and strict allow-list/UUIDv4 validation on `/tasks` | `task-authorization` |
+| Cloud Firestore storage | Automatic Firestore persistence (`users`, `tasks`, `seed_users`, `seed_tasks`) and emulator test suite (`test/firestore.test.js`) with JSON fallback | `firestore-storage` |
 
 ## Requirements
 
@@ -30,14 +31,23 @@ npm ci
 | Setting | Meaning | Default |
 | --- | --- | --- |
 | `PORT` | HTTP port the server listens on | `3000` |
-| `DATA_FILE` | Path to local JSON file for user persistence (`data/seed-users.json` for `npm run seed`) | `data/users.json` |
-| `TASKS_FILE` | Path to local JSON file for task persistence (`data/seed-tasks.json` for `npm run seed`) | `data/tasks.json` |
+| `DATA_FILE` | Path to local JSON file for user persistence (`data/seed-users.json` for `npm run seed`); overrides Firestore mode when explicitly passed in options | `data/users.json` |
+| `TASKS_FILE` | Path to local JSON file for task persistence (`data/seed-tasks.json` for `npm run seed`); overrides Firestore mode when explicitly passed in options | `data/tasks.json` |
 | `JWT_SECRET` | Secret key used to sign and verify JSON Web Tokens | required (no default) |
+| `FIRESTORE_EMULATOR_HOST` | Host and port of the Cloud Firestore emulator (e.g. `127.0.0.1:8080`); enables Firestore storage mode | unset (uses local JSON files unless `GOOGLE_APPLICATION_CREDENTIALS` is set) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Firebase / Google Cloud service account key JSON file; enables Firestore storage mode | unset |
+| `GCLOUD_PROJECT` / `FIREBASE_PROJECT_ID` | Google Cloud / Firebase project ID used by `src/storage/firestore.js` | `task-api` |
 
 ## Run
 
 ```bash
 JWT_SECRET=dev-secret-key npm start
+```
+
+Against a Cloud Firestore emulator (or production with `GOOGLE_APPLICATION_CREDENTIALS`):
+
+```bash
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 JWT_SECRET=dev-secret-key npm start
 ```
 
 In development, with `.env` loaded (`JWT_SECRET=...`) and automatic restart on change:
@@ -51,6 +61,12 @@ To populate isolated seed files (`data/seed-users.json` with 5 users and passwor
 ```bash
 npm run seed
 DATA_FILE=data/seed-users.json TASKS_FILE=data/seed-tasks.json JWT_SECRET=dev-secret-key npm start
+```
+
+To populate isolated Firestore seed collections (`seed_users` and `seed_tasks`) on the emulator:
+
+```bash
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm run seed
 ```
 
 ## Test
